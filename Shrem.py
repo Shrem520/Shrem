@@ -966,9 +966,15 @@ CONFIG_FILE = Path(__file__).parent / "shremtool_config.json"
 def show_current_dir():
     """显示当前目录信息"""
     config = load_config()
-    current_dir = config.get('base_dir', '未设置')
-    rainbow_print(f"\n当前主目录: {current_dir}", speed=0.005)
-    return current_dir
+    base_dir = config.get('base_dir', '未设置')
+    if base_dir != '未设置':
+        base_path = Path(base_dir)
+        shrem_dir = base_path / "Shrem"
+        rainbow_print(f"\n基础目录: {base_path}", speed=0.005)
+        rainbow_print(f"工作目录: {shrem_dir}", speed=0.005)
+    else:
+        rainbow_print("\n目录未设置", speed=0.005)
+    return base_dir
 
 def load_config():
     """加载配置文件"""
@@ -991,7 +997,9 @@ def get_base_dir():
     base_dir_path = config.get('base_dir')
     
     if base_dir_path and Path(base_dir_path).exists():
-        return Path(base_dir_path)
+        base_dir = Path(base_dir_path) / "Shrem"  # 添加这行
+        base_dir.mkdir(parents=True, exist_ok=True)  # 确保 Shrem 目录存在
+        return base_dir
     else:
         # 如果没有配置文件或路径不存在，提示用户输入
         return prompt_for_base_dir()
@@ -1005,7 +1013,10 @@ def banner():
 
     config = load_config()
     if 'base_dir' in config:
-        rainbow_print(f"\n工作目录: {config['base_dir']}", speed=0.005)
+        base_path = Path(config['base_dir'])
+        shrem_dir = base_path / "Shrem"
+        rainbow_print(f"\n基础目录: {base_path}", speed=0.005)
+        rainbow_print(f"工作目录: {shrem_dir}", speed=0.005)
     else:
         rainbow_print("\n工作目录: 未设置（首次使用）", speed=0.005)
     print()
@@ -1025,14 +1036,20 @@ def prompt_for_base_dir():
             rainbow_print("路径不能为空，请重新输入", speed=0.005)
             continue
             
-        path = Path(user_path)
+        base_path = Path(user_path)
         try:
-            path.mkdir(parents=True, exist_ok=True)
-            config = {'base_dir': str(path.absolute())}
+            base_path.mkdir(parents=True, exist_ok=True)
+            # 创建 Shrem 子目录
+            shrem_dir = base_path / "Shrem"
+            shrem_dir.mkdir(parents=True, exist_ok=True)
+            
+            # 保存用户输入的基础路径（不含 Shrem）
+            config = {'base_dir': str(base_path.absolute())}
             save_config(config)
-            rainbow_print(f"✓ 主目录已设置为: {path.absolute()}", speed=0.005)
+            rainbow_print(f"✓ 主目录已设置为: {base_path.absolute()}", speed=0.005)
+            rainbow_print(f"✓ 工作目录为: {shrem_dir.absolute()}", speed=0.005)
             time.sleep(1)
-            return path
+            return shrem_dir  # 返回 Shrem 目录
         except Exception as e:
             rainbow_print(f"错误: 无法创建目录 - {e}", speed=0.005)
             rainbow_print("请重新输入有效的路径", speed=0.005)
@@ -1043,13 +1060,17 @@ def ensure_directories():
     global BASE_DIR
     BASE_DIR = get_base_dir()  # 确保每次调用都获取最新的目录
     
-    # 创建子目录
+    # 现在 BASE_DIR 已经是 Shrem 子目录了，直接创建子目录
     (BASE_DIR / "PAK").mkdir(parents=True, exist_ok=True)
     (BASE_DIR / "UNPACK").mkdir(parents=True, exist_ok=True)
     (BASE_DIR / "REPACK").mkdir(parents=True, exist_ok=True)
     (BASE_DIR / "RESULT").mkdir(parents=True, exist_ok=True)
     
-    print(f"✓ 目录已就绪: {BASE_DIR}")
+    print(f"✓ 工作目录已就绪: {BASE_DIR}")
+    print(f"  - 请将 .pak 文件放入: {BASE_DIR / 'PAK'}")
+    print(f"  - 解包文件输出到: {BASE_DIR / 'UNPACK'}")
+    print(f"  - 修改文件放入: {BASE_DIR / 'REPACK'}")
+    print(f"  - 打包结果在: {BASE_DIR / 'RESULT'}")
 
 def unpack_pak(pak_file_path: str):
     try:
@@ -1125,7 +1146,7 @@ def main():
             
         if choice == "4":
             rainbow_print("电报@Shrem", speed=0.005)
-            break
+            exit(0) 
 
         if choice in ("1", "2"):
             action = "UNPACK" if choice == "1" else "REPACK"
@@ -1199,7 +1220,6 @@ def main():
                             rainbow_print("无效输入，请重试", speed=0.005)
                             
             else:
-                # 打包界面（保持不变）
                 rainbow_print(f"\n请选择要打包的 .pak 文件:", speed=0.005)
                 for i, pak_file in enumerate(pak_files):
                     file_name = Path(pak_file).name
