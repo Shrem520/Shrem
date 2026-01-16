@@ -6,6 +6,7 @@
 import os
 import subprocess
 import ssl
+import json
 import urllib.request
 import datetime
 import itertools as it
@@ -870,7 +871,7 @@ class TencentPakFile:
                 self._write_to_disk(current_out_path / file_name, entry)
     
     def repack(self, repack_dir: PurePath, target_pak_path: Path):
-        print(f"\nSTARTING REPACK PROCESS: {target_pak_path.name}")
+        print(f"\n开始重新打包 :{target_pak_path.name}")
         
         repack_base_path = repack_dir / self._mount_point
         
@@ -884,7 +885,7 @@ class TencentPakFile:
 
                     enc_str = self._get_method_str(entry.encryption_method, True)
                     comp_str = self._get_method_str(entry.compression_method, False)
-                    print(f"\n-> REPACKING FILE: {file_name} [{comp_str}/{enc_str}]")
+                    print(f"\n->正在重新打包文件：{file_name} [{comp_str}/{enc_str}]")
 
                     try:
                         with open(modified_file_path, 'rb') as f_modified:
@@ -896,12 +897,12 @@ class TencentPakFile:
                                 data_to_write = PakCrypto.encrypt_block(modified_data, modified_file_path, entry.encryption_method)
                             
                             if len(data_to_write) > entry.size:
-                                print(f"    ERROR: File became too large after processing: {file_name}")
+                                print(f"   错误：处理后文件变大： {file_name}")
                                 continue
 
                             target_file.seek(entry.offset)
                             target_file.write(data_to_write)
-                            print(f"    SUCCESS: {file_name} repacked successfully")
+                            print(f"    成功：{file_name} 已成功重新打包")
                              
                         else:
                             block_indices = PakCrypto.generate_block_indices(len(entry.compressed_blocks), entry.encryption_method)
@@ -926,7 +927,7 @@ class TencentPakFile:
                                         uncompressed_chunk, self._zstd_dict, entry.compression_method, level=9
                                     )
                                 else:
-                                    print(f"    -> Compressing block [{i}]", end="\r")
+                                    print(f"    -> 压缩块 [{i}]", end="\r")
                                     best_level, _ = CompressionFinder.find_best_level(
                                         uncompressed_chunk, original_compressed_space, self._zstd_dict, entry.compression_method
                                     )
@@ -941,7 +942,7 @@ class TencentPakFile:
                                 final_target_space = PakCrypto.align_encrypted_content_size(original_compressed_space, entry.encryption_method)
                                 
                                 if len(data_to_write) > final_target_space:
-                                    print(f"    WARNING: Block [{i}] too large ({len(data_to_write)} > {final_target_space}), skipping")
+                                    print(f"    警告：块[{i}] 太大({len(data_to_write)} > {final_target_space}), 跳过")
                                     blocks_skipped += 1
                                     continue
                                 
@@ -952,20 +953,95 @@ class TencentPakFile:
                                     target_file.write(padding)
                             
                             if blocks_skipped > 0:                                
-                                print(f"    PARTIAL SUCCESS: {file_name} (some blocks skipped)")
+                                print(f"    部分成功： {file_name} (跳过了一些块)")
                             else:
-                                print(f"    SUCCESS: {file_name} fully repacked")
+                                print(f"    成功： {file_name} 重新打包完整")
 
                     except Exception as e:
-                        print(f"    ERROR processing {file_name}: {e}")
+                        print(f"    处理错误{file_name}: {e}")
 
 # ====================== MAIN TOOL FUNCTIONS ======================
+CONFIG_FILE = Path(__file__).parent / "shremtool_config.json"
 
-BASE_DIR = Path("D:\Aceshi")
+def show_current_dir():
+    """显示当前目录信息"""
+    config = load_config()
+    current_dir = config.get('base_dir', '未设置')
+    rainbow_print(f"\n当前主目录: {current_dir}", speed=0.005)
+    return current_dir
+
+def load_config():
+    """加载配置文件"""
+    if CONFIG_FILE.exists():
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_config(config):
+    """保存配置文件"""
+    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(config, f, indent=4, ensure_ascii=False)
+
+def get_base_dir():
+    """获取基础目录路径"""
+    config = load_config()
+    base_dir_path = config.get('base_dir')
+    
+    if base_dir_path and Path(base_dir_path).exists():
+        return Path(base_dir_path)
+    else:
+        # 如果没有配置文件或路径不存在，提示用户输入
+        return prompt_for_base_dir()
+
+def clear_screen():
+    os.system('cls' if os.name == 'nt' else 'clear')
+
+def banner():
+    rainbow_print("   电报@Shrem ShremTool", speed=0.005)
+    rainbow_print("    PUBG Mobile 4.2 ", speed=0.005)
+
+    config = load_config()
+    if 'base_dir' in config:
+        rainbow_print(f"\n工作目录: {config['base_dir']}", speed=0.005)
+    else:
+        rainbow_print("\n工作目录: 未设置（首次使用）", speed=0.005)
+    print()
+
+def prompt_for_base_dir():
+    """提示用户输入基础目录路径"""
+    clear_screen()
+    banner()
+    rainbow_print("请输入 ShremTool 的主目录路径：", speed=0.005)
+    rainbow_print("手机推荐使用 /storage/emulated/0/Download/", speed=0.005)
+    
+    while True:
+        rainbow_prompt("路径: ", speed=0.01)
+        user_path = input().strip()
+        
+        if not user_path:
+            rainbow_print("路径不能为空，请重新输入", speed=0.005)
+            continue
+            
+        path = Path(user_path)
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            config = {'base_dir': str(path.absolute())}
+            save_config(config)
+            rainbow_print(f"✓ 主目录已设置为: {path.absolute()}", speed=0.005)
+            time.sleep(1)
+            return path
+        except Exception as e:
+            rainbow_print(f"错误: 无法创建目录 - {e}", speed=0.005)
+            rainbow_print("请重新输入有效的路径", speed=0.005)
+BASE_DIR = get_base_dir()
 
 def ensure_directories():
     # 确保 ShremTool 主目录存在
-    BASE_DIR.mkdir(parents=True, exist_ok=True)
+    global BASE_DIR
+    BASE_DIR = get_base_dir()  # 确保每次调用都获取最新的目录
     
     # 创建子目录
     (BASE_DIR / "PAK").mkdir(parents=True, exist_ok=True)
@@ -1018,15 +1094,10 @@ def repack_pak(pak_file_path: str):
         print(f"重打包出错 {pak_file_path}: {e}")
         traceback.print_exc()
 
-def clear_screen():
-    os.system('cls' if os.name == 'nt' else 'clear')
 
-def banner():
-    rainbow_print("   电报@Shrem ShremTool", speed=0.005)
-    rainbow_print("    PUBG Mobile 4.2 ", speed=0.005)
-    print()
 
 def main():
+    global BASE_DIR
     clear_screen()
     banner()
     ensure_directories()
@@ -1036,13 +1107,25 @@ def main():
             "\n" + "="*15 + " 主界面 " + "="*15 + "\n"
             "1. 解包 \n"
             "2. 打包\n"
-            "3. 退出\n"
+            "3. 更改 ShremTool 主目录\n"
+            "4. 退出\n"
             + "="*42
         )
         rainbow_print(menu_text, speed=0.005)
 
         rainbow_prompt("选择", speed=0.01)
         choice = input().strip()
+
+        if choice == "3":
+            # 更改主目录选项
+            new_base_dir = prompt_for_base_dir()
+            BASE_DIR = new_base_dir
+            ensure_directories()
+            continue
+            
+        if choice == "4":
+            rainbow_print("电报@Shrem", speed=0.005)
+            break
 
         if choice in ("1", "2"):
             action = "UNPACK" if choice == "1" else "REPACK"
@@ -1068,7 +1151,12 @@ def main():
                 # 解包界面 - 显示选项
                 rainbow_print(f"\n请选择操作:", speed=0.005)
                 rainbow_print("a. 一键解包所有文件", speed=0.005)
-                rainbow_print("1-{}. 选择单个文件解包".format(len(pak_files)), speed=0.005)
+                
+                # 显示所有 .pak 文件列表
+                for i, pak_file in enumerate(pak_files):
+                    file_name = Path(pak_file).name
+                    rainbow_print(f"{i+1}. {file_name}", speed=0.005)
+                    
                 rainbow_print("0. 返回主菜单", speed=0.005)
                 
                 while True:
@@ -1080,7 +1168,8 @@ def main():
                         print(f"\n开始一键解包所有 {len(pak_files)} 个文件...")
                         successful = 0
                         for i, pak_file in enumerate(pak_files):
-                            print(f"\n[{i+1}/{len(pak_files)}] 正在解包: {Path(pak_file).name}")
+                            file_name = Path(pak_file).name
+                            print(f"\n[{i+1}/{len(pak_files)}] 正在解包: {file_name}")
                             try:
                                 unpack_pak(pak_file)
                                 successful += 1
@@ -1099,6 +1188,8 @@ def main():
                             file_num = int(selection)
                             if 1 <= file_num <= len(pak_files):
                                 selected_file = pak_files[file_num - 1]
+                                file_name = Path(selected_file).name
+                                print(f"\n开始解包: {file_name}")
                                 unpack_pak(selected_file)
                                 input("\n按回车键继续...")
                                 break
@@ -1106,11 +1197,13 @@ def main():
                                 rainbow_print("无效编号，请重试", speed=0.005)
                         except ValueError:
                             rainbow_print("无效输入，请重试", speed=0.005)
+                            
             else:
                 # 打包界面（保持不变）
                 rainbow_print(f"\n请选择要打包的 .pak 文件:", speed=0.005)
                 for i, pak_file in enumerate(pak_files):
-                    rainbow_print(f"{i+1}. {Path(pak_file).name}", speed=0.005)
+                    file_name = Path(pak_file).name
+                    rainbow_print(f"{i+1}. {file_name}", speed=0.005)
 
                 while True:
                     rainbow_prompt(f"输入文件编号 (0 返回主菜单): ", speed=0.01)
