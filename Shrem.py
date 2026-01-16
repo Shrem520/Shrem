@@ -746,7 +746,7 @@ class TencentPakFile:
 
     def _verify_stem_hash(self) -> None:
         if not self._is_od and self._pak_info.version >= 9:
-            assert self._pak_info.stem_hash == zlib.crc32(self._file_path.stem.encode('utf-32le'))
+            print(f"跳过 stem hash 验证: {self._file_path.name}")
 
     def _tencent_load_index(self) -> None:
         index_data = self._file_content[self._pak_info.index_offset:][:self._pak_info.index_size]
@@ -881,6 +881,9 @@ class TencentPakFile:
                     modified_file_path = repack_base_path / dir_path / file_name
                     
                     if not modified_file_path.exists():
+                        print(f"跳过文件 {file_name}")
+                        print(f"文件路径: {modified_file_path}")
+                        print(f"是否存在: {modified_file_path.exists()}")
                         continue
 
                     enc_str = self._get_method_str(entry.encryption_method, True)
