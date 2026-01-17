@@ -871,98 +871,166 @@ class TencentPakFile:
                 self._write_to_disk(current_out_path / file_name, entry)
     
     def repack(self, repack_dir: PurePath, target_pak_path: Path):
-        print(f"\n开始重新打包 :{target_pak_path.name}")
+        print(f"\n开始重新打包: {target_pak_path.name}")
         
-        repack_base_path = repack_dir / self._mount_point
+        # 收集所有修改的文件（递归查找）
+        modified_files = []
+        for root, dirs, files in os.walk(repack_dir):
+            for file in files:
+                file_path = Path(root) / file
+                modified_files.append(file_path)
         
+        if not modified_files:
+            print("在 REPACK 目录中没有找到任何文件！")
+            print(f"请将修改后的文件放入: {repack_dir}")
+            return
+        
+        print(f"在 REPACK 目录中找到 {len(modified_files)} 个文件")
+        
+        # 打开目标文件进行修改
         with open(target_pak_path, 'r+b') as target_file:
-            for dir_path, dir_content in self._index.items():
-                for file_name, entry in dir_content.items():
-                    modified_file_path = repack_base_path / dir_path / file_name
+            processed_count = 0
+            success_count = 0
+            
+            for modified_file_path in modified_files:
+                processed_count += 1
+                file_name = modified_file_path.name
+                
+                print(f"\n[{processed_count}/{len(modified_files)}] 处理文件: {file_name}")
+                print(f"文件路径: {modified_file_path}")
+                
+                # 查找所有同名的原始文件
+                matching_entries = []
+                for dir_path, dir_content in self._index.items():
+                    for entry_name, entry in dir_content.items():
+                        if entry_name == file_name:
+                            full_path = dir_path / entry_name
+                            matching_entries.append((full_path, entry))
+                
+                if not matching_entries:
+                    print(f"  警告: 在 PAK 中找不到名为 {file_name} 的文件")
+                    continue
+                
+                elif len(matching_entries) == 1:
+                    # 只有一个匹配项，直接使用
+                    pak_file_path, entry = matching_entries[0]
+                    print(f"  找到匹配项: {pak_file_path}")
                     
-                    if not modified_file_path.exists():
-                        print(f"跳过文件 {file_name}")
-                        print(f"文件路径: {modified_file_path}")
-                        print(f"是否存在: {modified_file_path.exists()}")
-                        continue
-
-                    enc_str = self._get_method_str(entry.encryption_method, True)
-                    comp_str = self._get_method_str(entry.compression_method, False)
-                    print(f"\n->正在重新打包文件：{file_name} [{comp_str}/{enc_str}]")
-
-                    try:
-                        with open(modified_file_path, 'rb') as f_modified:
-                            modified_data = f_modified.read()
-
-                        if entry.compression_method == CM_NONE:
-                            data_to_write = modified_data
-                            if entry.encrypted:
-                                data_to_write = PakCrypto.encrypt_block(modified_data, modified_file_path, entry.encryption_method)
-                            
-                            if len(data_to_write) > entry.size:
-                                print(f"   错误：处理后文件变大： {file_name}")
-                                continue
-
-                            target_file.seek(entry.offset)
-                            target_file.write(data_to_write)
-                            print(f"    成功：{file_name} 已成功重新打包")
-                             
-                        else:
-                            block_indices = PakCrypto.generate_block_indices(len(entry.compressed_blocks), entry.encryption_method)
-                            uncompressed_offset = 0
-                            blocks_skipped = 0
-
-                            for i, block_index in enumerate(block_indices):
-                                block_info = entry.compressed_blocks[block_index]
-                                chunk_size = entry.compression_block_size
-                                
-                                uncompressed_chunk = modified_data[uncompressed_offset : uncompressed_offset + chunk_size]
-                                uncompressed_offset += chunk_size
-                                
-                                if not uncompressed_chunk:
-                                    break
-                                
-                                compressed_chunk = b''
-                                original_compressed_space = block_info.end - block_info.start
-                                
-                                if entry.compression_method == CM_ZLIB:
-                                    compressed_chunk = PakCompression.compress_block(
-                                        uncompressed_chunk, self._zstd_dict, entry.compression_method, level=9
-                                    )
-                                else:
-                                    print(f"    -> 压缩块 [{i}]", end="\r")
-                                    best_level, _ = CompressionFinder.find_best_level(
-                                        uncompressed_chunk, original_compressed_space, self._zstd_dict, entry.compression_method
-                                    )
-                                    compressed_chunk = PakCompression.compress_block(
-                                        uncompressed_chunk, self._zstd_dict, entry.compression_method, level=best_level
-                                    )
-                                
-                                data_to_write = compressed_chunk
-                                if entry.encrypted:
-                                    data_to_write = PakCrypto.encrypt_block(data_to_write, modified_file_path, entry.encryption_method)
-                                
-                                final_target_space = PakCrypto.align_encrypted_content_size(original_compressed_space, entry.encryption_method)
-                                
-                                if len(data_to_write) > final_target_space:
-                                    print(f"    警告：块[{i}] 太大({len(data_to_write)} > {final_target_space}), 跳过")
-                                    blocks_skipped += 1
-                                    continue
-                                
-                                target_file.seek(block_info.start)
-                                target_file.write(data_to_write)
-                                if len(data_to_write) < final_target_space:
-                                    padding = b'\x00' * (final_target_space - len(data_to_write))
-                                    target_file.write(padding)
-                            
-                            if blocks_skipped > 0:                                
-                                print(f"    部分成功： {file_name} (跳过了一些块)")
+                else:
+                    # 多个匹配项，让用户选择
+                    print(f"  找到 {len(matching_entries)} 个同名文件，请选择:")
+                    for i, (pak_file_path, entry) in enumerate(matching_entries, 1):
+                        enc_str = self._get_method_str(entry.encryption_method, True)
+                        comp_str = self._get_method_str(entry.compression_method, False)
+                        print(f"    {i}. {pak_file_path} [{comp_str}/{enc_str}]")
+                    
+                    while True:
+                        try:
+                            choice = int(input(f"  请选择 (1-{len(matching_entries)}): "))
+                            if 1 <= choice <= len(matching_entries):
+                                pak_file_path, entry = matching_entries[choice-1]
+                                break
                             else:
-                                print(f"    成功： {file_name} 重新打包完整")
+                                print(f"  请输入 1-{len(matching_entries)} 之间的数字")
+                        except ValueError:
+                            print("  请输入有效的数字")
+                
+                # 读取修改后的文件
+                with open(modified_file_path, 'rb') as f_modified:
+                    modified_data = f_modified.read()
+                
+                enc_str = self._get_method_str(entry.encryption_method, True)
+                comp_str = self._get_method_str(entry.compression_method, False)
+                print(f"  处理: {pak_file_path} [{comp_str}/{enc_str}]")
+                
+                try:
+                    if entry.compression_method == CM_NONE:
+                        data_to_write = modified_data
+                        if entry.encrypted:
+                            data_to_write = PakCrypto.encrypt_block(modified_data, modified_file_path, entry.encryption_method)
+                        
+                        if len(data_to_write) > entry.size:
+                            print(f"    错误：文件变大 ({len(data_to_write)} > {entry.size})，跳过")
+                            continue
 
-                    except Exception as e:
-                        print(f"    处理错误{file_name}: {e}")
+                        target_file.seek(entry.offset)
+                        target_file.write(data_to_write)
+                        print(f"    成功：已替换 {file_name}")
+                        success_count += 1
+                         
+                    else:
+                        block_indices = PakCrypto.generate_block_indices(len(entry.compressed_blocks), entry.encryption_method)
+                        uncompressed_offset = 0
+                        blocks_skipped = 0
+                        blocks_success = 0
 
+                        for i, block_index in enumerate(block_indices):
+                            block_info = entry.compressed_blocks[block_index]
+                            chunk_size = entry.compression_block_size
+                            
+                            uncompressed_chunk = modified_data[uncompressed_offset : uncompressed_offset + chunk_size]
+                            uncompressed_offset += chunk_size
+                            
+                            if not uncompressed_chunk:
+                                break
+                            
+                            compressed_chunk = b''
+                            original_compressed_space = block_info.end - block_info.start
+                            
+                            if entry.compression_method == CM_ZLIB:
+                                compressed_chunk = PakCompression.compress_block(
+                                    uncompressed_chunk, self._zstd_dict, entry.compression_method, level=9
+                                )
+                            else:
+                                print(f"    压缩块 [{i+1}/{len(block_indices)}]", end="\r")
+                                best_level, _ = CompressionFinder.find_best_level(
+                                    uncompressed_chunk, original_compressed_space, self._zstd_dict, entry.compression_method
+                                )
+                                compressed_chunk = PakCompression.compress_block(
+                                    uncompressed_chunk, self._zstd_dict, entry.compression_method, level=best_level
+                                )
+                            
+                            data_to_write = compressed_chunk
+                            if entry.encrypted:
+                                data_to_write = PakCrypto.encrypt_block(data_to_write, modified_file_path, entry.encryption_method)
+                            
+                            final_target_space = PakCrypto.align_encrypted_content_size(original_compressed_space, entry.encryption_method)
+                            
+                            if len(data_to_write) > final_target_space:
+                                print(f"    警告：块[{i}] 太大({len(data_to_write)} > {final_target_space}), 跳过")
+                                blocks_skipped += 1
+                                continue
+                            
+                            target_file.seek(block_info.start)
+                            target_file.write(data_to_write)
+                            if len(data_to_write) < final_target_space:
+                                padding = b'\x00' * (final_target_space - len(data_to_write))
+                                target_file.write(padding)
+                            
+                            blocks_success += 1
+                        
+                        if blocks_skipped > 0:
+                            print(f"    部分成功：处理了 {blocks_success}/{len(block_indices)} 个块")
+                            if blocks_success > 0:
+                                success_count += 1
+                        else:
+                            print(f"    成功：处理了所有 {len(block_indices)} 个块")
+                            success_count += 1
+                            
+                except Exception as e:
+                    print(f"    处理错误: {e}")
+                    import traceback
+                    traceback.print_exc()
+        
+        # 显示总结
+        print(f"\n{'='*50}")
+        print(f"打包完成总结:")
+        print(f"{'='*50}")
+        print(f"总共处理文件: {processed_count} 个")
+        print(f"成功替换文件: {success_count} 个")
+        if success_count < processed_count:
+            print(f"失败/跳过文件: {processed_count - success_count} 个")
+        print(f"{'='*50}")
 # ====================== MAIN TOOL FUNCTIONS ======================
 CONFIG_FILE = Path(__file__).parent / "shremtool_config.json"
 
