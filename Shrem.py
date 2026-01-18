@@ -867,25 +867,23 @@ class TencentPakFile:
             for file_name, entry in dir_content.items():
                 self._write_to_disk(current_out_path / file_name, entry)
     
-    def dump_obb_only(self, out_path: Path) -> None:
-        out_path = out_path / self._mount_point
-        out_path.mkdir(parents=True, exist_ok=True)
+def dump_obb_only(self, out_path: Path) -> None:
+    out_path = out_path / self._mount_point
+    out_path.mkdir(parents=True, exist_ok=True)
 
-        for dir_path, dir_content in self._index.items():
-            current_out_path = out_path / dir_path
-            current_out_path.mkdir(parents=True, exist_ok=True)
+    for dir_path, dir_content in self._index.items():
+        current_out_path = out_path / dir_path
+        current_out_path.mkdir(parents=True, exist_ok=True)
 
-            for file_name, entry in dir_content.items():
-                if not file_name.lower().endswith(('.uasset', '.uexp')):
-                    continue
-
-                try:
-                    self._write_to_disk(
-                        current_out_path / file_name,
-                        entry
-                    )
-                except Exception:
-                    pass
+        for file_name, entry in dir_content.items():
+            try:
+                self._write_to_disk(
+                    current_out_path / file_name,
+                    entry
+                )
+            except Exception:
+                # 无视一切错误，继续下一个文件
+                continue
 
     def repack(self, repack_dir: PurePath, target_pak_path: Path):
         print(f"\n开始重新打包: {target_pak_path.name}")
@@ -1181,7 +1179,7 @@ def unpack_obb_pak(pak_file_path):
         output_dir = BASE_DIR / "UNPACK" / (Path(pak_file_path).stem + "_pak")
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        print(f"\n开始解包 OBB（仅 uasset / uexp）: {Path(pak_file_path).name}")
+        print(f"\n开始解包 OBB: {Path(pak_file_path).name}")
 
         pak_file.dump_obb_only(output_dir)
 
