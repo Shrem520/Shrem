@@ -873,7 +873,7 @@ class TencentPakFile:
 
         tasks = []
 
-        with ThreadPoolExecutor(max_workers=8) as executor:
+        with ThreadPoolExecutor(max_workers=4) as executor:
             for dir_path, dir_content in self._index.items():
                 current_out_path = out_path / dir_path
                 current_out_path.mkdir(parents=True, exist_ok=True)
