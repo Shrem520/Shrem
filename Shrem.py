@@ -871,30 +871,9 @@ class TencentPakFile:
         out_path = out_path / self._mount_point
         out_path.mkdir(parents=True, exist_ok=True)
 
-        tasks = []
-
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            for dir_path, dir_content in self._index.items():
-                current_out_path = out_path / dir_path
-                current_out_path.mkdir(parents=True, exist_ok=True)
-
-                for file_name, entry in dir_content.items():
-                    if not file_name.lower().endswith(('.uasset', '.uexp')):
-                        continue
-
-                    tasks.append(
-                        executor.submit(
-                            self._write_to_disk,
-                            current_out_path / file_name,
-                            entry
-                        )
-                    )
-
-            for f in as_completed(tasks):
-                try:
-                    f.result()
-                except Exception:
-                    pass
+        for dir_path, dir_content in self._index.items():
+            current_out_path = out_path / dir_path
+            current_out_path.mkdir
 
     def repack(self, repack_dir: PurePath, target_pak_path: Path):
         print(f"\n开始重新打包: {target_pak_path.name}")
