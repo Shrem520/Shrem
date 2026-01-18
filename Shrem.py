@@ -867,23 +867,23 @@ class TencentPakFile:
             for file_name, entry in dir_content.items():
                 self._write_to_disk(current_out_path / file_name, entry)
     
-def dump_obb_only(self, out_path: Path) -> None:
-    out_path = out_path / self._mount_point
-    out_path.mkdir(parents=True, exist_ok=True)
+    def dump_obb_only(self, out_path: Path) -> None:
+        out_path = out_path / self._mount_point
+        out_path.mkdir(parents=True, exist_ok=True)
 
-    for dir_path, dir_content in self._index.items():
-        current_out_path = out_path / dir_path
-        current_out_path.mkdir(parents=True, exist_ok=True)
+        for dir_path, dir_content in self._index.items():
+            current_out_path = out_path / dir_path
+            current_out_path.mkdir(parents=True, exist_ok=True)
 
-        for file_name, entry in dir_content.items():
-            try:
-                self._write_to_disk(
-                    current_out_path / file_name,
-                    entry
-                )
-            except Exception:
-                # 无视一切错误，继续下一个文件
-                continue
+            for file_name, entry in dir_content.items():
+                try:
+                    self._write_to_disk(
+                        current_out_path / file_name,
+                        entry
+                    )
+                except Exception:
+                    # 无视一切错误，继续下一个文件
+                    continue
 
     def repack(self, repack_dir: PurePath, target_pak_path: Path):
         print(f"\n开始重新打包: {target_pak_path.name}")
