@@ -869,7 +869,63 @@ class TencentPakFile:
             current_out_path.mkdir(parents=True, exist_ok=True)
             for file_name, entry in dir_content.items():
                 self._write_to_disk(current_out_path / file_name, entry)
-    
+
+    def dump_obb_assets_only(self, out_path: Path) -> None:
+        out_path = out_path / self._mount_point
+        out_path.mkdir(parents=True, exist_ok=True)
+
+        created_dirs = set()
+
+        for dir_path, dir_content in self._index.items():
+            current_out_path = out_path / dir_path
+
+            if current_out_path not in created_dirs:
+                current_out_path.mkdir(parents=True, exist_ok=True)
+                created_dirs.add(current_out_path)
+
+            for file_name, entry in dir_content.items():
+                if not file_name.lower().endswith((".uasset", ".uexp")):
+                    continue
+
+                try:
+                    if entry.uncompressed_size < 2048:
+                        continue
+                except Exception:
+                    pass
+
+                out_file = current_out_path / file_name
+
+                try:
+                    self._write_to_disk(out_file, entry)
+
+                    try:
+                        if out_file.exists() and out_file.stat().st_size < 2048:
+                            out_file.unlink()
+                    except Exception:
+                        pass
+
+                except Exception:
+                    try:
+                        if out_file.exists():
+                            out_file.unlink()
+                    except Exception:
+                        pass
+
+        for root, _, files in os.walk(out_path):
+            for f in files:
+                try:
+                    if not f.lower().endswith((".uasset", ".uexp")):
+                        Path(root, f).unlink()
+                except Exception:
+                    pass
+
+        for root, dirs, files in os.walk(out_path, topdown=False):
+            try:
+                if not dirs and not files:
+                    Path(root).rmdir()
+            except Exception:
+                pass
+
     def repack(self, repack_dir: PurePath, target_pak_path: Path):
         print(f"\n开始重新打包: {target_pak_path.name}")
         
@@ -1158,6 +1214,44 @@ def unpack_pak(pak_file_path: str):
         print(f"解包出错 {pak_file_path}: {e}")
         traceback.print_exc()
 
+def unpack_obb_file(obb_path: str):
+    obb_path = Path(obb_path)
+
+    # 1️⃣ OBB 解压目录
+    obb_out = BASE_DIR / "UNPACK" / obb_path.stem
+    obb_out.mkdir(parents=True, exist_ok=True)
+
+    print(f"[+] 解压 OBB: {obb_path.name}")
+
+    # 2️⃣ 把 obb 当 zip 解（Android obb 本质就是 zip）
+    try:
+        import zipfile
+        with zipfile.ZipFile(obb_path, 'r') as zf:
+            zf.extractall(obb_out)
+    except Exception as e:
+        print(f"[!] OBB 解压失败，但继续: {e}")
+
+    # 3️⃣ 递归找 pak
+    pak_files = []
+    for root, _, files in os.walk(obb_out):
+        for f in files:
+            if f.lower().endswith(".pak"):
+                pak_files.append(Path(root) / f)
+
+    print(f"[+] 找到 {len(pak_files)} 个 pak")
+
+    # 4️⃣ 逐个 pak 解包（OBB 模式）
+    for pak in pak_files:
+        try:
+            print(f"[+] 解 pak: {pak.name}")
+            pak_file = TencentPakFile(pak)
+            pak_file.dump_obb_assets_only(obb_out)
+        except Exception:
+            # pak 级别错误也直接跳
+            continue
+
+    print("[✓] OBB 解包完成")
+
 def repack_pak(pak_file_path: str):
     try:
         repack_dir = BASE_DIR / "REPACK"
@@ -1199,8 +1293,9 @@ def main():
             "\n" + "="*15 + " 主界面 " + "="*15 + "\n"
             "1. 解包 \n"
             "2. 打包\n"
-            "3. 更改 ShremTool 主目录\n"
-            "4. 退出\n"
+            "3. 解包 OBB\n"
+            "4. 更改 ShremTool 主目录\n"
+            "5. 退出\n"
             + "="*42
         )
         rainbow_print(menu_text, speed=0.005)
@@ -1209,13 +1304,39 @@ def main():
         choice = input().strip()
 
         if choice == "3":
+            pak_dir = BASE_DIR / "PAK"
+            pak_dir.mkdir(parents=True, exist_ok=True)
+
+            obb_files = list(pak_dir.glob("*.obb"))
+
+            if not obb_files:
+                rainbow_print("PAK 目录中没有 .obb 文件", speed=0.005)
+                input("按回车继续...")
+                continue
+
+            rainbow_print("\n请选择 OBB 文件：", speed=0.005)
+            for i, obb in enumerate(obb_files):
+                rainbow_print(f"{i+1}. {obb.name}", speed=0.005)
+
+            rainbow_prompt("输入编号: ", speed=0.01)
+            try:
+                idx = int(input().strip()) - 1
+                if 0 <= idx < len(obb_files):
+                    unpack_obb_file(str(obb_files[idx]))
+                    input("\n按回车继续...")
+            except Exception:
+                pass
+
+            continue
+
+        if choice == "4":
             # 更改主目录选项
             new_base_dir = prompt_for_base_dir()
             BASE_DIR = new_base_dir
             ensure_directories()
             continue
             
-        if choice == "4":
+        if choice == "5":
             rainbow_print("电报@Shrem", speed=0.005)
             exit(0) 
 
