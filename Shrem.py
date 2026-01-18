@@ -1,9 +1,4 @@
-﻿# =============================================================================
-# PUBG MOBILE PAK TOOL v4.2 - Termux Optimized (FULLY FIXED)
-# Supports all PUBG Mobile 4.2 versions
-# =============================================================================
-
-import os
+﻿import os
 import subprocess
 import ssl
 import json
@@ -27,6 +22,8 @@ from Crypto.Cipher.AES import MODE_CBC
 from Crypto.Hash import SHA1
 from Crypto.Util.Padding import unpad, pad
 from zstandard import ZstdDecompressor, ZstdCompressor, ZstdCompressionDict, DICT_TYPE_AUTO
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 import time
 import sys
@@ -870,6 +867,35 @@ class TencentPakFile:
             for file_name, entry in dir_content.items():
                 self._write_to_disk(current_out_path / file_name, entry)
     
+    def dump_obb_only(self, out_path: Path) -> None:
+        out_path = out_path / self._mount_point
+        out_path.mkdir(parents=True, exist_ok=True)
+
+        tasks = []
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            for dir_path, dir_content in self._index.items():
+                current_out_path = out_path / dir_path
+                current_out_path.mkdir(parents=True, exist_ok=True)
+
+                for file_name, entry in dir_content.items():
+                    if not file_name.lower().endswith(('.uasset', '.uexp')):
+                        continue
+
+                    tasks.append(
+                        executor.submit(
+                            self._write_to_disk,
+                            current_out_path / file_name,
+                            entry
+                        )
+                    )
+
+            for f in as_completed(tasks):
+                try:
+                    f.result()
+                except Exception:
+                    pass
+
     def repack(self, repack_dir: PurePath, target_pak_path: Path):
         print(f"\n开始重新打包: {target_pak_path.name}")
         
@@ -1158,6 +1184,23 @@ def unpack_pak(pak_file_path: str):
         print(f"解包出错 {pak_file_path}: {e}")
         traceback.print_exc()
 
+def unpack_obb_pak(pak_file_path):
+    try:
+        pak_file = TencentPakFile(PurePath(pak_file_path))
+        output_dir = BASE_DIR / "UNPACK" / (Path(pak_file_path).stem + "_pak")
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        print(f"\n开始解包 OBB（仅 uasset / uexp）: {Path(pak_file_path).name}")
+
+        pak_file.dump_obb_only(output_dir)
+
+        print("完成")
+
+    except Exception as e:
+        import traceback
+        print(f"解包 OBB 出错: {e}")
+        traceback.print_exc()
+
 def repack_pak(pak_file_path: str):
     try:
         repack_dir = BASE_DIR / "REPACK"
@@ -1199,8 +1242,9 @@ def main():
             "\n" + "="*15 + " 主界面 " + "="*15 + "\n"
             "1. 解包 \n"
             "2. 打包\n"
-            "3. 更改 ShremTool 主目录\n"
-            "4. 退出\n"
+            "3. 解包obb\n"
+            "4. 更改 ShremTool 主目录\n"
+            "5. 退出\n"
             + "="*42
         )
         rainbow_print(menu_text, speed=0.005)
@@ -1209,13 +1253,37 @@ def main():
         choice = input().strip()
 
         if choice == "3":
+            pak_dir = BASE_DIR / "PAK"
+            pak_files = glob.glob(str(pak_dir / "*.pak"))
+
+            if not pak_files:
+                rainbow_print("PAK 文件夹中没有 pak 文件", speed=0.005)
+                continue
+
+            rainbow_print("\n请选择 OBB pak 文件：", speed=0.005)
+            for i, pak_file in enumerate(pak_files):
+                rainbow_print(f"{i+1}. {Path(pak_file).name}", speed=0.005)
+
+            rainbow_prompt("输入编号: ", speed=0.01)
+            try:
+                idx = int(input().strip()) - 1
+                if 0 <= idx < len(pak_files):
+                    unpack_obb_pak(pak_files[idx])
+                    input("\n按回车继续...")
+            except ValueError:
+                pass
+
+            continue
+
+
+        if choice == "4":
             # 更改主目录选项
             new_base_dir = prompt_for_base_dir()
             BASE_DIR = new_base_dir
             ensure_directories()
             continue
             
-        if choice == "4":
+        if choice == "5":
             rainbow_print("电报@Shrem", speed=0.005)
             exit(0) 
 
