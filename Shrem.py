@@ -911,14 +911,6 @@ class TencentPakFile:
                     except Exception:
                         pass
 
-        for root, _, files in os.walk(out_path):
-            for f in files:
-                try:
-                    if not f.lower().endswith((".uasset", ".uexp")):
-                        Path(root, f).unlink()
-                except Exception:
-                    pass
-
         for root, dirs, files in os.walk(out_path, topdown=False):
             try:
                 if not dirs and not files:
