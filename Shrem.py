@@ -873,7 +873,19 @@ class TencentPakFile:
 
         for dir_path, dir_content in self._index.items():
             current_out_path = out_path / dir_path
-            current_out_path.mkdir
+            current_out_path.mkdir(parents=True, exist_ok=True)
+
+            for file_name, entry in dir_content.items():
+                if not file_name.lower().endswith(('.uasset', '.uexp')):
+                    continue
+
+                try:
+                    self._write_to_disk(
+                        current_out_path / file_name,
+                        entry
+                    )
+                except Exception:
+                    pass
 
     def repack(self, repack_dir: PurePath, target_pak_path: Path):
         print(f"\n开始重新打包: {target_pak_path.name}")
